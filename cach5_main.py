@@ -38,6 +38,8 @@ parser.add_argument('--m_cosface', default=0.2, type=float, help='margin m for C
 parser.add_argument('--max_norm', default=0.5, type=float, help='gradient clipping max norm for pre-train')
 parser.add_argument('--epochs_cosface', default=50, type=int, help='number of epochs for CosFace pre-training')
 parser.add_argument('--lr_backbone', default=0.0001, type=float, help='learning rate for backbone in pre-train CosFace')
+parser.add_argument('--image_size', default=32, type=float, help='Input image size (32 or 112)')
+
 
 
 try:
@@ -46,8 +48,8 @@ except Exception as e:
     print(f"Parser error: {e}")
     sys.exit(1)
 
-trainset, testset = get_datasets_transform(args.dataset, args.data_dir, cross_eval=args.cross_dataset, backbone=args.backbone)['dataset']
-transform_train, transform_test = get_datasets_transform(args.dataset, args.data_dir, cross_eval=args.cross_dataset, backbone=args.backbone)['transform']
+trainset, testset = get_datasets_transform(args.dataset, args.data_dir, cross_eval=args.cross_dataset, input_size=args.image_size)['dataset']
+transform_train, transform_test = get_datasets_transform(args.dataset, args.data_dir, cross_eval=args.cross_dataset, input_size=args.image_size)['transform']
 
 train_loader = torch.utils.data.DataLoader(trainset, batch_size=args.bs, shuffle=True, pin_memory=True, num_workers=4)
 test_loader = torch.utils.data.DataLoader(testset, batch_size=args.bs, shuffle=False, pin_memory=True, num_workers=4)

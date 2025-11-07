@@ -3,7 +3,7 @@ import torchvision.transforms as transforms
 from torchvision import datasets
 import os
 
-def get_datasets_transform(dataset, data_dir="/kaggle/input/facescrub-0210-3", cross_eval=False):
+def get_datasets_transform(dataset, data_dir="/kaggle/input/facescrub-0210-3", cross_eval=False, input_size = 32):
     to_tensor = transforms.ToTensor()
     
     # Define paths for FaceScrub processed data
@@ -34,7 +34,7 @@ def get_datasets_transform(dataset, data_dir="/kaggle/input/facescrub-0210-3", c
         )
         transform_test = transform_train
     else:
-        if dataset == "vggface2":
+        if dataset == "vggface2" or input_size == 112:
             transform_train = torch.nn.Sequential(
                 transforms.Resize(120),
                 transforms.RandomCrop(112),
