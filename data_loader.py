@@ -1,130 +1,129 @@
+# data_loader.py - Phiên bản cập nhật hỗ trợ FaceScrub-EdgeFace 112x112 cho EdgeFace testing
 import torch
 import torchvision.transforms as transforms
 from torchvision import datasets
-import torchvision.io
 import os
-import cv2
-#import dlib
-import numpy as np
-import torch.nn as nn
-import torchvision.transforms.functional as TF
 
-#detector = dlib.get_frontal_face_detector()  # Global dlib detector for align
-
-def get_datasets_transform(dataset, data_dir="/kaggle/input/facescrub-edgeface-0710-1", cross_eval=False, backbone='resnet'):
+def get_datasets_transform(dataset, data_dir="/kaggle/input/facescrub-32x32-opqn", cross_eval=False, backbone='resnet'):
+    """
+    ĐÚNG THEO CODE CHÍNH CHỦ OPQN + hỗ trợ EdgeFace 112x112
+    - FaceScrub gốc: 32x32 + mean/std cụ thể
+    - EdgeFace: 112x112 + [-1,1] + augments thêm (Blur, Grayscale)
+    - Tự động detect qua data_dir và backbone
+    """
     to_tensor = transforms.ToTensor()
 
-    # Define paths for FaceScrub processed data
-    if dataset == "facescrub":
-        train_path = os.path.join(data_dir, "facescrub", "train", "actors")
-        test_path = os.path.join(data_dir, "facescrub", "test", "actors")
-    elif dataset == "vggface2":
+    # === ĐƯỜNG DẪN ===
+    if dataset != "vggface2":
+        train_path = os.path.join(data_dir, dataset, "train")
+        test_path  = os.path.join(data_dir, dataset, "test")
+    else:
         if cross_eval:
             train_path = os.path.join(data_dir, "vggface2", "cross_train")
-            test_path = os.path.join(data_dir, "vggface2", "cross_test")
+            test_path  = os.path.join(data_dir, "vggface2", "cross_test")
         else:
             train_path = os.path.join(data_dir, "vggface2", "train")
-            test_path = os.path.join(data_dir, "vggface2", "test")
-    else:
-        train_path = os.path.join(data_dir, dataset, "train")
-        test_path = os.path.join(data_dir, dataset, "test")
+            test_path  = os.path.join(data_dir, "vggface2", "test")
 
-    # Load datasets with debug print
+    print(f"[OPQN Loader] Dataset: {dataset} | Backbone: {backbone} | DataDir: {data_dir}")
+    print(f"  Train: {train_path}")
+    print(f"  Test:  {test_path}")
+
     trainset = datasets.ImageFolder(root=train_path, transform=to_tensor)
-    testset = datasets.ImageFolder(root=test_path, transform=to_tensor)
-    print(f"Train path: {train_path}")  # Debug
-    print(f"Test path: {test_path}")    # Debug
+    testset  = datasets.ImageFolder(root=test_path,  transform=to_tensor)
 
-    # Align only for EdgeFace if dataset not pre-aligned (FaceScrub is pre-aligned 112x112)
-    align_transform = nn.Identity()  # Skip align since dataset is pre-aligned
-    # Uncomment below if you want to enable alignment for EdgeFace
-    # align_transform = transforms.Lambda(align_face) if backbone == 'edgeface' else nn.Identity()
+    # === TỰ ĐỘNG PHÁT HIỆN KÍCH THƯỚC ===
+    is_32x32_facescrub = dataset != "vggface2" and any(x in data_dir.lower() for x in ['32x32', '32', '0210', '0210-3'])
+    is_112x112_facescrub = dataset != "vggface2" and any(x in data_dir.lower() for x in ['0710','0710-1'])
 
-    # Normalize and resize conditional
-    # if backbone == 'edgeface':
-    #     # norm_mean = [0.618, 0.465, 0.393]
-    #     # norm_std = [0.238, 0.202, 0.190]
-    #     norm_mean = (0.5, 0.5, 0.5) #Norm [-1 1] thay vì. [0 1]
-    #     norm_std = (0.5, 0.5, 0.5)
-    #     resize_crop_size = 120
-    #     crop_size = 112
-        
-    # Normalize and resize conditional
-    if backbone == 'edgeface':
-        # TỰ ĐỘNG PHÁT HIỆN DATA 32x32 QUA ĐƯỜNG DẪN
-        if '32x32' in data_dir.lower() or '32' in data_dir.lower():
-            # DÙNG CHO DATASET 32x32 → CHỈ ĐỔI KÍCH THƯỚC
-            norm_mean = (0.5, 0.5, 0.5)  # GIỮ NGUYÊN [-1, 1]
-            norm_std  = (0.5, 0.5, 0.5)
-            resize_crop_size = 35
-            crop_size = 32
-            print("EdgeFace: Phát hiện dataset 32x32 → Resize(35) + Crop(32)")
-        else:
-            # MẶC ĐỊNH 112x112
-            norm_mean = (0.5, 0.5, 0.5)
-            norm_std  = (0.5, 0.5, 0.5)
-            resize_crop_size = 120
-            crop_size = 112
-            print("EdgeFace: Dùng Resize(120) + Crop(112)")
+    # === EDGEFACE AUGMENTS (Blur + Grayscale) - CHỈ KHI backbone=edgeface ===
+    # edgeface_augs = [
+    #     transforms.RandomGrayscale(p=0.2),
+    #     transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 2.0)),
+    # ] if backbone == 'edgeface' else []
 
-    else:  # resnet (gốc OPQN) ← ĐÚNG VỊ TRÍ
-        if dataset == "vggface2" or cross_eval:
-            norm_mean = (0.5, 0.5, 0.5)
-            norm_std  = (0.5, 0.5, 0.5)
-            resize_crop_size = 120
-            crop_size = 112
-        else:  # facescrub
-            norm_mean = [0.639, 0.479, 0.404]
-            norm_std  = [0.216, 0.183, 0.171]
-            resize_crop_size = 35
-            crop_size = 32
+    # === FACESCRUB 32x32 (OPQN GỐC) ===
+    if is_32x32_facescrub:
+        norm_mean = [0.639, 0.479, 0.404]
+        norm_std  = [0.216, 0.183, 0.171]
+        resize_size = 35
+        crop_size = 32
 
-    # Transforms
-    if cross_eval:
-        transform_train = nn.Sequential(
-            align_transform,
-            transforms.Resize(resize_crop_size),
+        print("→ FaceScrub 32x32 (OPQN Official): mean/std cụ thể + Resize(35) → Crop(32)")
+
+        base_train = [
+            transforms.Resize(resize_size),
+            transforms.RandomCrop(crop_size),
+            transforms.RandomHorizontalFlip(),
+        ] #+ edgeface_augs  # Thêm nếu backbone=edgeface, nhưng thường không dùng cho 32x32
+
+        base_test = [
+            transforms.Resize(resize_size),
             transforms.CenterCrop(crop_size),
+        ]
+
+    # === EDGEFACE 112x112 (MỚI THÊM CHO TEST) ===
+    elif is_112x112_facescrub:
+        norm_mean = (0.5, 0.5, 0.5)
+        norm_std  = (0.5, 0.5, 0.5)
+        resize_size = 120
+        crop_size = 112
+
+        print("→ FaceScrub-EdgeFace 112x112: [-1,1] normalize + Resize(120) → Crop(112) + EdgeFace augments")
+
+        base_train = [
+            transforms.Resize(resize_size),
+            transforms.RandomCrop(crop_size),
+            transforms.RandomHorizontalFlip(),
+        ] #+ edgeface_augs  # Luôn thêm cho EdgeFace
+
+        base_test = [
+            transforms.Resize(resize_size),
+            transforms.CenterCrop(crop_size),
+        ]
+
+    # === VGGFACE2 HOẶC MẶC ĐỊNH (112x112) ===
+    else:
+        norm_mean = (0.5, 0.5, 0.5)
+        norm_std  = (0.5, 0.5, 0.5)
+        resize_size = 120
+        crop_size = 112
+
+        print("→ VGGFace2 / Default 112x112: [-1,1] normalize + Resize(120) → Crop(112)")
+
+        base_train = [
+            transforms.Resize(resize_size),
+            transforms.RandomCrop(crop_size),
+            transforms.RandomHorizontalFlip(),
+        ] #+ edgeface_augs
+
+        base_test = [
+            transforms.Resize(resize_size),
+            transforms.CenterCrop(crop_size),
+        ]
+
+    # === FINAL TRANSFORMS ===
+    normalize = transforms.Normalize(mean=norm_mean, std=norm_std)
+
+    if cross_eval:
+        transform_train = transforms.Compose(base_test + [
             transforms.ConvertImageDtype(torch.float),
-            transforms.Normalize(norm_mean, norm_std),
-        )
+            normalize,
+        ])
         transform_test = transform_train
     else:
-        if dataset == "vggface2":
-            transform_train = nn.Sequential(
-                align_transform,
-                transforms.Resize(resize_crop_size),
-                transforms.RandomCrop(crop_size),
-                transforms.RandomHorizontalFlip(),
-                transforms.RandomGrayscale(p=0.2),  # Thêm giống EdgeFace
-                transforms.GaussianBlur(kernel_size=3),  # Thêm giống EdgeFace
-                transforms.ConvertImageDtype(torch.float),
-                transforms.Normalize(norm_mean, norm_std),
-            )
-            transform_test = nn.Sequential(
-                align_transform,
-                transforms.Resize(resize_crop_size),
-                transforms.CenterCrop(crop_size),
-                transforms.ConvertImageDtype(torch.float),
-                transforms.Normalize(norm_mean, norm_std),
-            )
-        else:
-            transform_train = nn.Sequential(
-                align_transform,
-                transforms.Resize(resize_crop_size),
-                transforms.RandomCrop(crop_size),
-                transforms.RandomHorizontalFlip(),
-                transforms.RandomGrayscale(p=0.2),  # Thêm giống EdgeFace
-                transforms.GaussianBlur(kernel_size=3),  # Thêm giống EdgeFace
-                transforms.ConvertImageDtype(torch.float),
-                transforms.Normalize(norm_mean, norm_std),
-            )
-            transform_test = nn.Sequential(
-                align_transform,
-                transforms.Resize(resize_crop_size),
-                transforms.CenterCrop(crop_size),
-                transforms.ConvertImageDtype(torch.float),
-                transforms.Normalize(norm_mean, norm_std),
-            )
+        transform_train = transforms.Compose(base_train + [
+            transforms.ConvertImageDtype(torch.float),
+            normalize,
+        ])
+        transform_test = transforms.Compose(base_test + [
+            transforms.ConvertImageDtype(torch.float),
+            normalize,
+        ])
 
-    return {"dataset": [trainset, testset], "transform": [transform_train, transform_test]}
+    print(f"  → Size: {crop_size}x{crop_size} | Norm: {norm_mean[:1]}... | Augs: {'+Blur/Grayscale' if edgeface_augs else ''}")
+
+    return {
+        "dataset": [trainset, testset],
+        "transform": [transform_train, transform_test]
+    }
