@@ -3,7 +3,7 @@ import torchvision.transforms as transforms
 from torchvision import datasets
 import os
 
-def get_datasets_transform(dataset, data_dir="/kaggle/input/facescrub-edgeface-32x32", cross_eval=False):
+def get_datasets_transform(dataset, data_dir="/kaggle/input/facescrub-0210-3", cross_eval=False):
     to_tensor = transforms.ToTensor()
     
     # Define paths for FaceScrub processed data
