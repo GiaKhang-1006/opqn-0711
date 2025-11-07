@@ -39,6 +39,7 @@ parser.add_argument('--max_norm', default=0.5, type=float, help='gradient clippi
 parser.add_argument('--epochs_cosface', default=50, type=int, help='number of epochs for CosFace pre-training')
 parser.add_argument('--lr_backbone', default=0.0001, type=float, help='learning rate for backbone in pre-train CosFace')
 parser.add_argument('--image_size', default=32, type=float, help='Input image size (32 or 112)')
+#parser.add_argument('--wd', default=5e-4, type=float, help='weight decay')
 
 
 
@@ -56,6 +57,17 @@ test_loader = torch.utils.data.DataLoader(testset, batch_size=args.bs, shuffle=F
 
 device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 torch.cuda.manual_seed_all(1)
+
+# class adjust_lr:
+#     def __init__(self, step, decay):
+#         self.step = step
+#         self.decay = decay
+
+#     def adjust(self, optimizer, epoch):
+#         lr = args.lr * (self.decay ** (epoch // self.step))
+#         for i, param_group in enumerate(optimizer.param_groups):
+#             param_group['lr'] = lr
+#         return lr
 
 def train(save_path, length, num, words, feature_dim):
     best_acc = 0
