@@ -25,11 +25,6 @@ def get_datasets_transform(dataset, data_dir="/kaggle/input/facescrub-0210-3", c
     trainset = datasets.ImageFolder(root=train_path, transform=to_tensor)
     testset  = datasets.ImageFolder(root=test_path,  transform=to_tensor)
 
-    print(f"[OPQN Official] Loading {dataset} from:")
-    print(f"   Train: {train_path}")
-    print(f"   Test:  {test_path}")
-
-    # === THEO CODE GỐC TÁC GIẢ 100% ===
     if cross_eval:
         transform_train = torch.nn.Sequential(
             transforms.Resize(120),
@@ -53,7 +48,7 @@ def get_datasets_transform(dataset, data_dir="/kaggle/input/facescrub-0210-3", c
                 transforms.ConvertImageDtype(torch.float),
                 transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
             )
-        else:  # FaceScrub, YouTube, CFW → 32x32
+        else:
             transform_train = torch.nn.Sequential(
                 transforms.Resize(35),
                 transforms.RandomCrop(32),
@@ -68,17 +63,7 @@ def get_datasets_transform(dataset, data_dir="/kaggle/input/facescrub-0210-3", c
                 transforms.Normalize([0.639, 0.479, 0.404], [0.216, 0.183, 0.171])
             )
 
-    print(f"[OPQN Official] Using OFFICIAL normalize for {dataset}:")
-    if dataset != "vggface2":
-        print("   → FaceScrub 32x32 → mean=[0.639, 0.479, 0.404], std=[0.216, 0.183, 0.171]")
-    else:
-        print("   → VGGFace2 → [-1, 1] normalize")
-
-    return {
-        "dataset": [trainset, testset],
-        "transform": [transform_train, transform_test]
-    }
-
+    return {"dataset": [trainset, testset], "transform": [transform_train, transform_test]}
 
 
 
