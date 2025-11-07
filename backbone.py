@@ -295,7 +295,7 @@ from torch import nn
 from backbones import get_model  # Từ EdgeFace repo copy vào OPQN dir
 
 class EdgeFaceBackbone(nn.Module):
-    def __init__(self, model_name='edgeface_xs', feature_dim=512, channel_max=512, size=4, freeze=False):
+    def __init__(self, model_name='edgeface_xs_gamma_06', feature_dim=512, channel_max=512, size=4, freeze=False):
         super().__init__()
         self.feature_dim = feature_dim
         self.backbone = get_model(model_name)
