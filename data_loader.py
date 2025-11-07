@@ -121,7 +121,8 @@ def get_datasets_transform(dataset, data_dir="/kaggle/input/facescrub-32x32-opqn
             normalize,
         ])
 
-    print(f"  → Size: {crop_size}x{crop_size} | Norm: {norm_mean[:1]}... | Augs: {'+Blur/Grayscale' if edgeface_augs else ''}")
+    #print(f"  → Size: {crop_size}x{crop_size} | Norm: {norm_mean[:1]}... | Augs: {'+Blur/Grayscale' if edgeface_augs else ''}")
+    print(f"  → Size: {crop_size}x{crop_size} | Norm: {norm_mean[:1]}... ")
 
     return {
         "dataset": [trainset, testset],
