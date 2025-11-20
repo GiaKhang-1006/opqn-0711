@@ -252,16 +252,29 @@ def test(load_path, length, num, words, feature_dim=512):
         # ----------------------------- COMPUTE mAP + TOP-K ----------------------------- #
         start_map = time.perf_counter()
 
-        # Tính một lần – trả về cả mAP và vector kết quả để tái sử dụng
-        mAP, topk_dict = PqDistRet_Ortho(
+        # 1) Tính mAP (top = full database)
+        mAP, _ = PqDistRet_Ortho(
             query_features, test_labels,
             train_labels, index,
             mlp_weight, len_word, num,
             device,
-            top_list=list(range(10, 101, 10))  # compute only once
+            top=len(trainset)     # mAP cần so với toàn bộ tập train
         )
 
         map_time_ms = (time.perf_counter() - start_map) * 1000
+
+        # 2) Tính top-k từ 10 → 100
+        topk_dict = {}
+        for k in range(10, 101, 10):
+            _, acc_k = PqDistRet_Ortho(
+                query_features, test_labels,
+                train_labels, index,
+                mlp_weight, len_word, num,
+                device,
+                top=k
+            )
+            topk_dict[k] = acc_k
+
 
     total_time_ms = (time.perf_counter() - start_total) * 1000
     avg_query_time = total_time_ms / len(testset)

@@ -309,6 +309,7 @@ def train(save_path, length, num, words, feature_dim):
     print("Best mAP {:.4f} at epoch {}".format(best_mAP, best_epoch))
     print("Model saved as %s" % save_path)
 
+
 def test(load_path, length, num, words, feature_dim=512):
     len_bit = int(num * math.log(words, 2))
     assert length == len_bit, "something went wrong with code length"
@@ -363,16 +364,29 @@ def test(load_path, length, num, words, feature_dim=512):
         # ----------------------------- COMPUTE mAP + TOP-K ----------------------------- #
         start_map = time.perf_counter()
 
-        # Tính một lần – trả về cả mAP và vector kết quả để tái sử dụng
-        mAP, topk_dict = PqDistRet_Ortho(
+        # 1) Tính mAP (top = full database)
+        mAP, _ = PqDistRet_Ortho(
             query_features, test_labels,
             train_labels, index,
             mlp_weight, len_word, num,
             device,
-            top_list=list(range(10, 101, 10))  # compute only once
+            top=len(trainset)     # mAP cần so với toàn bộ tập train
         )
 
         map_time_ms = (time.perf_counter() - start_map) * 1000
+
+        # 2) Tính top-k từ 10 → 100
+        topk_dict = {}
+        for k in range(10, 101, 10):
+            _, acc_k = PqDistRet_Ortho(
+                query_features, test_labels,
+                train_labels, index,
+                mlp_weight, len_word, num,
+                device,
+                top=k
+            )
+            topk_dict[k] = acc_k
+
 
     total_time_ms = (time.perf_counter() - start_total) * 1000
     avg_query_time = total_time_ms / len(testset)
@@ -387,7 +401,6 @@ def test(load_path, length, num, words, feature_dim=512):
 
     print(f"Total time (feature + mAP + top-k): {total_time_ms:.2f} ms")
     print(f"Average time per query: {avg_query_time:.4f} ms/query")
-
 
 # def test(load_path, length, num, words, feature_dim=512):
 #     len_bit = int(num * math.log(words, 2))
