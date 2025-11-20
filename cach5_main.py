@@ -309,6 +309,7 @@ def train(save_path, length, num, words, feature_dim):
     print("Best mAP {:.4f} at epoch {}".format(best_mAP, best_epoch))
     print("Model saved as %s" % save_path)
 
+
 def test(load_path, length, num, words, feature_dim=512):
     len_bit = int(num * math.log(words, 2))
     assert length == len_bit, "something went wrong with code length"
@@ -342,14 +343,14 @@ def test(load_path, length, num, words, feature_dim=512):
 
     net = nn.DataParallel(net).to(device)
 
-    # Kiá»ƒm tra náº¿u lÃ  Ä‘Æ°á»ng dáº«n tuyá»‡t Ä‘á»‘i (vÃ­ dá»¥: /kaggle/input/...)
+    # Kiểm tra nếu là đường dẫn tuyệt đối (ví dụ: /kaggle/input/...)
     if os.path.isabs(load_path):
         checkpoint_path = load_path
     else:
         checkpoint_dir = '/kaggle/working/opqn-0210/checkpoint/' if 'kaggle' in os.environ.get('PWD', '') else 'checkpoint'
         checkpoint_path = os.path.join(checkpoint_dir, load_path)
 
-    # Kiá»ƒm tra xem file cÃ³ tá»“n táº¡i khÃ´ng trÆ°á»›c khi load
+    # Kiểm tra xem file có tồn tại không trước khi load
     if not os.path.exists(checkpoint_path):
         print(f"Error: Checkpoint file {checkpoint_path} not found")
         sys.exit(1)
@@ -357,34 +358,124 @@ def test(load_path, length, num, words, feature_dim=512):
     print(f"Loading pretrained weights from {checkpoint_path}")
     checkpoint = torch.load(checkpoint_path)
     net.load_state_dict(checkpoint['backbone'])
-    mlp_weight = checkpoint.get('mlp', None)  # Sá»­ dá»¥ng get Ä‘á»ƒ trÃ¡nh lá»—i náº¿u 'mlp' khÃ´ng tá»“n táº¡i
+    mlp_weight = checkpoint.get('mlp', None)  # Sử dụng get để tránh lỗi nếu 'mlp' không tồn tại
 
     len_word = int(feature_dim / num)
     net.eval()
-    
-    # TÃ­nh thá»i gian truy váº¥n
-    total_query_time = 0
-    num_queries = len(testset)
-    
     with torch.no_grad():
-        # TÃ­nh index cho táº­p train
+        # Pre-compute database index (offline – không tính vào query time)
         index, train_labels = compute_quant_indexing(transform_test, train_loader, net, len_word, mlp_weight, device)
-        
-        # Äo thá»i gian truy váº¥n cho táº­p test
-        start = time.perf_counter()  # Sá»­ dá»¥ng perf_counter Ä‘á»ƒ Ä‘o chÃ­nh xÃ¡c hÆ¡n
+
+        # Đo thời gian extract query features
+        start_extract = time.perf_counter()
         query_features, test_labels = compute_quant(transform_test, test_loader, net, device)
-        # TÃ­nh mAP má»™t láº§n trÃªn toÃ n bá»™ ranked list
-        mAP, _ = PqDistRet_Ortho(query_features, test_labels, train_labels, index, mlp_weight, len_word, num, device, top=len(trainset))
-        print(f"[Evaluate Phase] mAP: {100. * float(mAP):.2f}%")
-        # VÃ²ng láº·p cho top-k tá»« 10 Ä‘áº¿n 100, step 10, chá»‰ tÃ­nh top-k accuracy
-        for k in range(10, 101, 10):
-            _, top_k = PqDistRet_Ortho(query_features, test_labels, train_labels, index, mlp_weight, len_word, num, device, top=k)
-            print(f"[Evaluate Phase @ top-{k}] top_k: {100. * float(top_k):.2f}%")
-        total_query_time = (time.perf_counter() - start) * 1000  # Chuyá»ƒn sang ms
-        avg_query_time = total_query_time / num_queries  # ms/query
+        extract_time = time.perf_counter() - start_extract
+
+        # Dùng top=100 để đo search time (lớn nhất → conservative estimate, chính xác nhất)
+        start_search = time.perf_counter()
+        map100, _ = PqDistRet_Ortho(query_features, test_labels, train_labels, index, mlp_weight, len_word, num, device, top=100)
+        search_time = time.perf_counter() - start_search
+
+        total_query_time_s = extract_time + search_time
+        avg_ms_per_query = total_query_time_s * 1000 / len(testset)
+
+        print(f"Speed: {avg_ms_per_query:.2f} ms/query")
+
+        # Tính mAP@10 đến mAP@100
+        print("Accuracy:")
+        kvals = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+        maps = []
+        for k in kvals:
+            map_k, _ = PqDistRet_Ortho(query_features, test_labels, train_labels, index, mlp_weight, len_word, num, device, top=k)
+            maps.append(map_k * 100)
+
+        # In đẹp như paper
+        print("  mAP@10: {:.2f}%   mAP@20: {:.2f}%   mAP@30: {:.2f}%".format(maps[0], maps[1], maps[2]))
+        print("  mAP@40: {:.2f}%   mAP@50: {:.2f}%   mAP@60: {:.2f}%".format(maps[3], maps[4], maps[5]))
+        print("  mAP@70: {:.2f}%   mAP@80: {:.2f}%   mAP@90: {:.2f}%".format(maps[6], maps[7], maps[8]))
+        print("  mAP@100: {:.2f}%".format(maps[9]))
+
+        # Nếu muốn thêm full mAP (tùy chọn)
+        # full_map, _ = PqDistRet_Ortho(query_features, test_labels, train_labels, index, mlp_weight, len_word, num, device, top=None)  # hoặc top=len(trainset)
+        # print(f"  mAP (full): {full_map*100:.2f}%")
     
-    print(f"Query completed in {total_query_time:.2f} ms")
-    print(f"Average query time: {avg_query_time:.4f} ms/query")
+
+# def test(load_path, length, num, words, feature_dim=512):
+#     len_bit = int(num * math.log(words, 2))
+#     assert length == len_bit, "something went wrong with code length"
+
+#     print(f"=============== Evaluation on model {load_path} ===============")
+#     num_classes = len(trainset.classes)
+#     num_classes_test = len(testset.classes)
+#     print(f"Number of train identities: {num_classes}")
+#     print(f"Number of test identities: {num_classes_test}")
+#     print(f"Number of training images: {len(trainset)}")
+#     print(f"Number of test images: {len(testset)}")
+#     print(f"Number of training batches per epoch: {len(train_loader)}")
+#     print(f"Number of testing batches per epoch: {len(test_loader)}")
+
+#     if args.cross_dataset:
+#         if args.backbone == 'edgeface':
+#             net = EdgeFaceBackbone(feature_dim=feature_dim)
+#         else:
+#             net = resnet20_pq(num_layers=20, feature_dim=feature_dim)
+#     else:
+#         if args.dataset in ["facescrub", "cfw", "youtube"]:
+#             if args.backbone == 'edgeface':
+#                 net = EdgeFaceBackbone(feature_dim=feature_dim)
+#             else:
+#                 net = resnet20_pq(num_layers=20, feature_dim=feature_dim, channel_max=512, size=4)
+#         else:
+#             if args.backbone == 'edgeface':
+#                 net = EdgeFaceBackbone(feature_dim=feature_dim)
+#             else:
+#                 net = resnet20_pq(num_layers=20, feature_dim=feature_dim)
+
+#     net = nn.DataParallel(net).to(device)
+
+#     # Kiá»ƒm tra náº¿u lÃ  Ä‘Æ°á»ng dáº«n tuyá»‡t Ä‘á»‘i (vÃ­ dá»¥: /kaggle/input/...)
+#     if os.path.isabs(load_path):
+#         checkpoint_path = load_path
+#     else:
+#         checkpoint_dir = '/kaggle/working/opqn-0210/checkpoint/' if 'kaggle' in os.environ.get('PWD', '') else 'checkpoint'
+#         checkpoint_path = os.path.join(checkpoint_dir, load_path)
+
+#     # Kiá»ƒm tra xem file cÃ³ tá»“n táº¡i khÃ´ng trÆ°á»›c khi load
+#     if not os.path.exists(checkpoint_path):
+#         print(f"Error: Checkpoint file {checkpoint_path} not found")
+#         sys.exit(1)
+        
+#     print(f"Loading pretrained weights from {checkpoint_path}")
+#     checkpoint = torch.load(checkpoint_path)
+#     net.load_state_dict(checkpoint['backbone'])
+#     mlp_weight = checkpoint.get('mlp', None)  # Sá»­ dá»¥ng get Ä‘á»ƒ trÃ¡nh lá»—i náº¿u 'mlp' khÃ´ng tá»“n táº¡i
+
+#     len_word = int(feature_dim / num)
+#     net.eval()
+    
+#     # TÃ­nh thá»i gian truy váº¥n
+#     total_query_time = 0
+#     num_queries = len(testset)
+    
+#     with torch.no_grad():
+#         # TÃ­nh index cho táº­p train
+#         index, train_labels = compute_quant_indexing(transform_test, train_loader, net, len_word, mlp_weight, device)
+        
+#         # Äo thá»i gian truy váº¥n cho táº­p test
+#         start = time.perf_counter()  # Sá»­ dá»¥ng perf_counter Ä‘á»ƒ Ä‘o chÃ­nh xÃ¡c hÆ¡n
+#         query_features, test_labels = compute_quant(transform_test, test_loader, net, device)
+#         # TÃ­nh mAP má»™t láº§n trÃªn toÃ n bá»™ ranked list
+#         mAP, _ = PqDistRet_Ortho(query_features, test_labels, train_labels, index, mlp_weight, len_word, num, device, top=len(trainset))
+#         print(f"[Evaluate Phase] mAP: {100. * float(mAP):.2f}%")
+#         # VÃ²ng láº·p cho top-k tá»« 10 Ä‘áº¿n 100, step 10, chá»‰ tÃ­nh top-k accuracy
+#         for k in range(10, 101, 10):
+#             _, top_k = PqDistRet_Ortho(query_features, test_labels, train_labels, index, mlp_weight, len_word, num, device, top=k)
+#             print(f"[Evaluate Phase @ top-{k}] top_k: {100. * float(top_k):.2f}%")
+#         total_query_time = (time.perf_counter() - start) * 1000  # Chuyá»ƒn sang ms
+#         avg_query_time = total_query_time / num_queries  # ms/query
+    
+#     print(f"Query completed in {total_query_time:.2f} ms")
+#     print(f"Average query time: {avg_query_time:.4f} ms/query")
 
 if __name__ == "__main__":
     save_dir = 'log'
