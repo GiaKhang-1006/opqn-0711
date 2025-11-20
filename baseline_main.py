@@ -13,6 +13,8 @@ from utils import Logger, AverageMeter, compute_quant, compute_quant_indexing, P
 from backbone import resnet20_pq, SphereNet20_pq
 from margin_metric import OrthoPQ
 from data_loader import get_datasets_transform
+import random
+import numpy as np  # Thêm import nếu chưa có
 
 parser = argparse.ArgumentParser(description='PyTorch Implementation of Orthonormal Product Quantization (OPQN-v2.1)')
 parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
@@ -47,7 +49,14 @@ train_loader = torch.utils.data.DataLoader(trainset, batch_size=args.bs, shuffle
 test_loader = torch.utils.data.DataLoader(testset, batch_size=args.bs, shuffle=False, pin_memory=True, num_workers=4)
 
 device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+#torch.cuda.manual_seed_all(1)
+torch.manual_seed(1)
+torch.cuda.manual_seed(1)
 torch.cuda.manual_seed_all(1)
+np.random.seed(1)
+random.seed(1)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False   # <--- quan trọng nhất
 
 class adjust_lr:
     def __init__(self, step, decay):
@@ -107,7 +116,7 @@ def train(save_path, length, num, words, feature_dim):
           (len_bit, args.lr, metric.s, metric.m, args.miu))
     net = nn.DataParallel(net).to(device)
     metric = nn.DataParallel(metric).to(device)
-    cudnn.benchmark = True
+    #cudnn.benchmark = True
 
     if args.freeze:
         for param in net.parameters():
