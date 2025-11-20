@@ -228,9 +228,7 @@ def test(load_path, length, num, words, feature_dim=512):
                 net = EdgeFaceBackbone(feature_dim=feature_dim)
             else:
                 net = resnet20_pq(num_layers=20, feature_dim=feature_dim)
-
-    net = nn.DataParallel(net).to(device)
-
+    
     # Kiểm tra nếu là đường dẫn tuyệt đối (ví dụ: /kaggle/input/...)
     if os.path.isabs(load_path):
         checkpoint_path = load_path
@@ -246,6 +244,8 @@ def test(load_path, length, num, words, feature_dim=512):
     print(f"Loading pretrained weights from {checkpoint_path}")
     checkpoint = torch.load(checkpoint_path)
     net.load_state_dict(checkpoint['backbone'])
+    net = nn.DataParallel(net).to(device)
+
     mlp_weight = checkpoint.get('mlp', None)  # Sử dụng get để tránh lỗi nếu 'mlp' không tồn tại
 
     len_word = int(feature_dim / num)
