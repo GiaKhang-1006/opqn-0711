@@ -35,6 +35,7 @@ parser.add_argument('--sc', default=40, type=float, help='scale s for metric ini
 parser.add_argument('--wd', default=5e-4, type=float, help='weight decay')
 parser.add_argument('--scheduler_type', default='step', choices=['step', 'plateau'], help='lr scheduler')
 parser.add_argument('--freeze', action='store_true', help='freeze backbone (for finetuning)')
+parser.add_argument('--image_size', default=32, type=float, help='Input image size (32 or 112)')
 
 try:
     args = parser.parse_args()
@@ -42,8 +43,12 @@ except Exception as e:
     print(f"Parser error: {e}")
     sys.exit(1)
 
-trainset, testset = get_datasets_transform(args.dataset, cross_eval=args.cross_dataset, data_dir=args.data_dir)['dataset']
-transform_train, transform_test = get_datasets_transform(args.dataset, cross_eval=args.cross_dataset, data_dir=args.data_dir)['transform']
+# trainset, testset = get_datasets_transform(args.dataset, cross_eval=args.cross_dataset, data_dir=args.data_dir)['dataset']
+# transform_train, transform_test = get_datasets_transform(args.dataset, cross_eval=args.cross_dataset, data_dir=args.data_dir)['transform']
+
+
+trainset, testset = get_datasets_transform(args.dataset, args.data_dir, cross_eval=args.cross_dataset, input_size=args.image_size)['dataset']
+transform_train, transform_test = get_datasets_transform(args.dataset, args.data_dir, cross_eval=args.cross_dataset, input_size=args.image_size)['transform']
 
 train_loader = torch.utils.data.DataLoader(trainset, batch_size=args.bs, shuffle=True, pin_memory=True, num_workers=4)
 test_loader = torch.utils.data.DataLoader(testset, batch_size=args.bs, shuffle=False, pin_memory=True, num_workers=4)
