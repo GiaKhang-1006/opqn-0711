@@ -197,71 +197,207 @@ def train(save_path, length, num, words, feature_dim):
     print("Best mAP {:.4f} at epoch {}".format(best_mAP, best_epoch))
     print("Model saved as %s" % save_path)
 
-def test(load_path, length, num, words, feature_dim):
+# def test(load_path, length, num, words, feature_dim):
+#     len_bit = int(num * math.log(words, 2))
+#     assert length == len_bit, "something went wrong with code length"
+
+#     d = int(feature_dim / num)
+#     matrix = torch.randn(d, d)
+#     for k in range(d):
+#         for j in range(d):
+#             matrix[j, k] = math.cos((j+0.5)*k*math.pi/d)
+#     matrix[:, 0] /= math.sqrt(2)    # divided by sqrt(2)
+#     matrix /= math.sqrt(d/2)    # divided by sqrt(N/2)
+#     code_books = torch.Tensor(num, d, words)
+#     code_books[0] = matrix[:, :words]
+#     for i in range(1, num):
+#         code_books[i] = matrix @ code_books[i-1]
+
+#     print("===============evaluation on model %s===============" % load_path)
+
+#     if args.cross_dataset or args.dataset == "vggface2":
+#         if args.backbone == 'edgeface':
+#             net = EdgeFaceBackbone(feature_dim=feature_dim)
+#         else:
+#             net = resnet20_pq(num_layers=20, feature_dim=feature_dim)
+#     else:
+#         if args.backbone == 'edgeface':
+#             net = EdgeFaceBackbone(feature_dim=feature_dim)
+#         else:
+#             net = resnet20_pq(num_layers=20, feature_dim=feature_dim, channel_max=512, size=4)
+
+#     train_loader = torch.utils.data.DataLoader(trainset, batch_size=args.bs, shuffle=False, pin_memory=True, num_workers=4)
+#     test_loader = torch.utils.data.DataLoader(testset, batch_size=args.bs, shuffle=False, pin_memory=True, num_workers=4)
+#     num_classes = len(trainset.classes)
+#     num_classes_test = len(testset.classes)
+#     print("number of train identities: ", num_classes)
+#     print("number of test identities: ", num_classes_test)
+#     print("number of training images: ", len(trainset))
+#     print("number of test images: ", len(testset))
+#     print("number of training batches per epoch:", len(train_loader))
+#     print("number of testing batches per epoch:", len(test_loader))
+
+#     device = "cuda:0" if torch.cuda.is_available() else "cpu"
+#     net = nn.DataParallel(net).to(device)
+
+#     checkpoint_dir = '/kaggle/working/opqn-0210/checkpoint/' if 'kaggle' in os.environ.get('PWD', '') else 'checkpoint'
+#     checkpoint = torch.load(os.path.join(checkpoint_dir, load_path))
+#     net.load_state_dict(checkpoint['backbone'])
+#     mlp_weight = checkpoint['mlp']
+#     len_word = int(feature_dim / num)
+#     net.eval()
+#     with torch.no_grad():
+#         index, train_labels = compute_quant_indexing(transform_test, train_loader, net, len_word, mlp_weight, device)
+#         start = datetime.now()
+#         query_features, test_labels = compute_quant(transform_test, test_loader, net, device)
+#         if args.dataset != "vggface2":
+#             mAP, top_k, distances, ranks, features = PqDistRet_Ortho_safe(query_features, test_labels, train_labels, index, mlp_weight, len_word, num, device, top=5, bit_length=length)
+#         else:
+#             mAP, top_k, distances, ranks, features = PqDistRet_Ortho_safe(query_features, test_labels, train_labels, index, mlp_weight, len_word, num, device, top=5, bit_length=length)
+
+#         time_elapsed = datetime.now() - start
+#         print("Query completed in %d ms" % int(time_elapsed.total_seconds() * 1000))
+#         print('[Evaluate Phase] MAP: %.2f%% top_k: %.2f%%' % (100. * float(mAP), 100. * float(top_k)))
+
+def test(load_path, length, num, words, feature_dim=512):
     len_bit = int(num * math.log(words, 2))
     assert length == len_bit, "something went wrong with code length"
 
-    d = int(feature_dim / num)
-    matrix = torch.randn(d, d)
-    for k in range(d):
-        for j in range(d):
-            matrix[j, k] = math.cos((j+0.5)*k*math.pi/d)
-    matrix[:, 0] /= math.sqrt(2)    # divided by sqrt(2)
-    matrix /= math.sqrt(d/2)    # divided by sqrt(N/2)
-    code_books = torch.Tensor(num, d, words)
-    code_books[0] = matrix[:, :words]
-    for i in range(1, num):
-        code_books[i] = matrix @ code_books[i-1]
+    print(f"=============== Evaluation on model {load_path} ===============")
+    print(f"Train classes: {len(trainset.classes)}   | Test classes: {len(testset.classes)}")
+    print(f"Train images: {len(trainset)}            | Test images: {len(testset)}")
 
-    print("===============evaluation on model %s===============" % load_path)
-
-    if args.cross_dataset or args.dataset == "vggface2":
-        if args.backbone == 'edgeface':
-            net = EdgeFaceBackbone(feature_dim=feature_dim)
+    # ----------------------------- LOAD BACKBONE ----------------------------- #
+    if args.backbone == 'edgeface':
+        net = EdgeFaceBackbone(feature_dim=feature_dim)
+    else:
+        if args.dataset == 'facescrub':
+            net = resnet20_pq(num_layers=20, feature_dim=feature_dim, channel_max=512, size=4)
         else:
             net = resnet20_pq(num_layers=20, feature_dim=feature_dim)
-    else:
-        if args.backbone == 'edgeface':
-            net = EdgeFaceBackbone(feature_dim=feature_dim)
-        else:
-            net = resnet20_pq(num_layers=20, feature_dim=feature_dim, channel_max=512, size=4)
 
-    train_loader = torch.utils.data.DataLoader(trainset, batch_size=args.bs, shuffle=False, pin_memory=True, num_workers=4)
-    test_loader = torch.utils.data.DataLoader(testset, batch_size=args.bs, shuffle=False, pin_memory=True, num_workers=4)
-    num_classes = len(trainset.classes)
-    num_classes_test = len(testset.classes)
-    print("number of train identities: ", num_classes)
-    print("number of test identities: ", num_classes_test)
-    print("number of training images: ", len(trainset))
-    print("number of test images: ", len(testset))
-    print("number of training batches per epoch:", len(train_loader))
-    print("number of testing batches per epoch:", len(test_loader))
-
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
     net = nn.DataParallel(net).to(device)
 
-    checkpoint_dir = '/kaggle/working/opqn-0210/checkpoint/' if 'kaggle' in os.environ.get('PWD', '') else 'checkpoint'
-    checkpoint = torch.load(os.path.join(checkpoint_dir, load_path))
-    net.load_state_dict(checkpoint['backbone'])
-    mlp_weight = checkpoint['mlp']
-    len_word = int(feature_dim / num)
-    net.eval()
-    with torch.no_grad():
-        index, train_labels = compute_quant_indexing(transform_test, train_loader, net, len_word, mlp_weight, device)
-        start = datetime.now()
-        query_features, test_labels = compute_quant(transform_test, test_loader, net, device)
-        if args.dataset != "vggface2":
-            mAP, top_k, distances, ranks, features = PqDistRet_Ortho_safe(query_features, test_labels, train_labels, index, mlp_weight, len_word, num, device, top=5, bit_length=length)
-        else:
-            mAP, top_k, distances, ranks, features = PqDistRet_Ortho_safe(query_features, test_labels, train_labels, index, mlp_weight, len_word, num, device, top=5, bit_length=length)
+    # ----------------------------- CHECKPOINT PATH ---------------------------- #
+    checkpoint_dir = (
+        '/kaggle/working/opqn-0210/checkpoint/'
+        if 'kaggle' in os.environ.get('PWD', '')
+        else 'checkpoint'
+    )
+    checkpoint_path = load_path if os.path.isabs(load_path) else os.path.join(checkpoint_dir, load_path)
 
-        time_elapsed = datetime.now() - start
-        print("Query completed in %d ms" % int(time_elapsed.total_seconds() * 1000))
-        print('[Evaluate Phase] MAP: %.2f%% top_k: %.2f%%' % (100. * float(mAP), 100. * float(top_k)))
+    if not os.path.exists(checkpoint_path):
+        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+
+    checkpoint = torch.load(checkpoint_path)
+    net.load_state_dict(checkpoint['backbone'])
+    mlp_weight = checkpoint.get('mlp', None)
+
+    net.eval()
+    len_word = feature_dim // num
+
+    # ----------------------------- FEATURE EXTRACTION ----------------------------- #
+    start_total = time.perf_counter()
+
+    with torch.no_grad():
+       # 1. PHASE OFFLINE (Không tính giờ vào metric truy vấn)
+        print("Indexing Training Set (Offline)...")
+        index, train_labels = compute_quant_indexing(
+            transform_test, train_loader, net, len_word, mlp_weight, device
+        )
+        
+        # -------------------------------------------------------------------
+        # 2. ĐO THỜI GIAN FEATURE EXTRACTION (Của tập Test/Query)
+        # -------------------------------------------------------------------
+        # Warm-up GPU (chạy nháp 1 chút để GPU nóng máy, tránh lần đầu bị chậm)
+        dummy_input = torch.randn(1, 3, 112, 112).to(device)
+        _ = net(dummy_input)
+        torch.cuda.synchronize() 
+        
+        start_extract = time.perf_counter()
+        
+        # Trích xuất đặc trưng query
+        query_features, test_labels = compute_quant(
+            transform_test, test_loader, net, device
+        )
+        
+        torch.cuda.synchronize() # Chờ GPU trích xuất xong hết mới dừng giờ
+        extract_time_total = (time.perf_counter() - start_extract)
+        
+        # -------------------------------------------------------------------
+        # 3. ĐO THỜI GIAN SEARCH (TÍNH KHOẢNG CÁCH + SẮP XẾP)
+        # -------------------------------------------------------------------
+        # Chỉ đo 1 lần tìm kiếm duy nhất (ví dụ lấy top lớn nhất cần dùng, ở đây là len(trainset))
+        
+        torch.cuda.synchronize()
+        start_search = time.perf_counter()
+        
+        # Gọi hàm search 1 lần duy nhất
+        # Lưu ý: Hàm này nên trả về khoảng cách/kết quả thô, 
+        # việc tính mAP hay Accuracy là việc của đánh giá, không phải thời gian search thực tế.
+        # Tuy nhiên nếu hàm PqDistRet_Ortho gộp chung thì ta đành đo chung.
+        # Để công bằng, chỉ đo lần chạy nặng nhất (top=len(trainset)) hoặc top-100
+        
+        mAP, _ = PqDistRet_Ortho(
+            query_features, test_labels,
+            train_labels, index,
+            mlp_weight, len_word, num,
+            device,
+            top=len(trainset) 
+        )
+        
+        torch.cuda.synchronize() # Chờ search xong
+        search_time_total = (time.perf_counter() - start_search)
+
+        # -------------------------------------------------------------------
+        # 4. TÍNH TOÁN KẾT QUẢ
+        # -------------------------------------------------------------------
+        num_queries = len(testset)
+        
+        # Thời gian trung bình trích xuất 1 ảnh
+        avg_extract_ms = (extract_time_total * 1000) / num_queries
+        
+        # Thời gian trung bình tìm kiếm cho 1 ảnh
+        avg_search_ms = (search_time_total * 1000) / num_queries
+        
+        # Tổng thời gian latency cho 1 query
+        avg_time_per_query = avg_extract_ms + avg_search_ms
+
+        print(f"=============== Latency Report ===============")
+        print(f"Total Queries: {num_queries}")
+        print(f"Feature Extraction Time: {avg_extract_ms:.4f} ms/img")
+        print(f"Search Time (Retrieval): {avg_search_ms:.4f} ms/query")
+        print(f"--> Average Time per Query: {avg_time_per_query:.4f} ms")
+
+        # 2) Tính top-k từ 10 → 100
+        topk_dict = {}
+        for k in range(10, 101, 10):
+            _, acc_k = PqDistRet_Ortho(
+                query_features, test_labels,
+                train_labels, index,
+                mlp_weight, len_word, num,
+                device,
+                top=k
+            )
+            topk_dict[k] = acc_k
+
+
+    total_time_ms = (time.perf_counter() - start_total) * 1000
+    avg_query_time = total_time_ms / len(testset)
+
+    # ----------------------------- OUTPUT ----------------------------- #
+    print(f"[Evaluate] mAP: {100 * mAP:.2f}%")
+   
+    for k, acc in topk_dict.items():
+        print(f"[Evaluate @ top-{k}] accuracy: {100 * acc:.2f}%")
+
 
 if __name__ == "__main__":
     save_dir = 'log'
     if args.evaluate:
+        if not args.load:
+            print("Error: --load is required for evaluation mode")
+            sys.exit(1)
         if len(args.load) != len(args.num) or len(args.load) != len(args.len) or len(args.load) != len(args.words):
             print("Warning: Args lengths don't match. Adjusting to shortest length.")
             min_len = min(len(args.load), len(args.num), len(args.len), len(args.words))
