@@ -101,6 +101,9 @@ def train(save_path, length, num, words, feature_dim):
     if args.backbone == 'resnet':
         if args.cross_dataset or args.dataset == "vggface2":
             net = resnet20_pq(num_layers=20, feature_dim=feature_dim)
+        elif args.image_size == 112:
+            # Dùng SphereNet20_pq cho ảnh 112
+            net = SphereNet20_pq(num_layers=20, feature_dim=feature_dim)
         else:
             net = resnet20_pq(num_layers=20, feature_dim=feature_dim, channel_max=512, size=4)
     elif args.backbone == 'edgeface':
