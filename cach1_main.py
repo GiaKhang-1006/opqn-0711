@@ -9,7 +9,7 @@ import argparse
 import sys
 import time
 import os
-from utils import Logger, AverageMeter, compute_quant, compute_quant_indexing, PqDistRet_Ortho, PqDistRet_Ortho_safe
+from utils import Logger, AverageMeter, compute_quant, compute_quant_indexing, PqDistRet_Ortho
 from backbone import resnet20_pq, SphereNet20_pq, EdgeFaceBackbone
 from margin_metric import OrthoPQ
 from data_loader import get_datasets_transform
