@@ -338,6 +338,56 @@ def test(load_path, length, num, words, feature_dim=512):
     for k, acc in topk_dict.items():
         print(f"[Evaluate @ top-{k}] accuracy: {100 * acc:.2f}%")
 
+if __name__ == "__main__":
+    save_dir = 'log'
+    if args.evaluate:
+        if len(args.load) != len(args.num) or len(args.load) != len(args.len) or len(args.load) != len(args.words):
+            print("Warning: Args lengths don't match. Adjusting to shortest length.")
+            min_len = min(len(args.load), len(args.num), len(args.len), len(args.words))
+            args.load = args.load[:min_len]
+            args.num = args.num[:min_len]
+            args.len = args.len[:min_len]
+            args.words = args.words[:min_len]
+        for i, (num_s, words_s) in enumerate(zip(args.num, args.words)):
+            if args.cross_dataset:
+                feature_dim = num_s * words_s
+            else:
+                if args.dataset != "vggface2":
+                    if args.len[i] != 36:
+                        feature_dim = 512
+                    else:
+                        feature_dim = 516
+                else:
+                    feature_dim = num_s * words_s
+            test(args.load[i], args.len[i], num_s, words_s, feature_dim=feature_dim)
+    else:
+        if len(args.save) != len(args.num) or len(args.save) != len(args.len) or len(args.save) != len(args.words):
+            print("Warning: Args lengths don't match. Adjusting to shortest length.")
+            min_len = min(len(args.save), len(args.num), len(args.len), len(args.words))
+            args.save = args.save[:min_len]
+            args.num = args.num[:min_len]
+            args.len = args.len[:min_len]
+            args.words = args.words[:min_len]
+        for i, (num_s, words_s) in enumerate(zip(args.num, args.words)):
+            sys.stdout = Logger(os.path.join(save_dir,
+                str(args.len[i]) + 'bits' + '_' + args.dataset + '_' + datetime.now().strftime('%m%d%H%M') + '.txt'))
+            print("[Configuration] Training on dataset: %s\n  Len_bits: %d\n Batch_size: %d\n learning rate: %.3f\n num_books: %d\n num_words: %d" %
+                  (args.dataset, args.len[i], args.bs, args.lr, num_s, words_s))
+            print("HyperParams:\nmargin: %.3f\t miu: %.4f" % (args.margin, args.miu))
+            if args.dataset != "vggface2":
+                if args.len[i] != 36:
+                    feature_dim = 512
+                else:
+                    feature_dim = 516
+            else:
+                feature_dim = num_s * words_s
+            train(args.save[i], args.len[i], num_s, words_s, feature_dim=feature_dim)
+
+
+
+
+
+
 # def test(load_path, length, num, words, feature_dim=512):
 #     len_bit = int(num * math.log(words, 2))
 #     assert length == len_bit, "something went wrong with code length"
@@ -493,48 +543,3 @@ def test(load_path, length, num, words, feature_dim=512):
 #         time_elapsed = datetime.now() - start
 #         print("Query completed in %d ms" % int(time_elapsed.total_seconds() * 1000))
 #         print('[Evaluate Phase] MAP: %.2f%% top_k: %.2f%%' % (100. * float(mAP), 100. * float(top_k)))
-
-if __name__ == "__main__":
-    save_dir = 'log'
-    if args.evaluate:
-        if len(args.load) != len(args.num) or len(args.load) != len(args.len) or len(args.load) != len(args.words):
-            print("Warning: Args lengths don't match. Adjusting to shortest length.")
-            min_len = min(len(args.load), len(args.num), len(args.len), len(args.words))
-            args.load = args.load[:min_len]
-            args.num = args.num[:min_len]
-            args.len = args.len[:min_len]
-            args.words = args.words[:min_len]
-        for i, (num_s, words_s) in enumerate(zip(args.num, args.words)):
-            if args.cross_dataset:
-                feature_dim = num_s * words_s
-            else:
-                if args.dataset != "vggface2":
-                    if args.len[i] != 36:
-                        feature_dim = 512
-                    else:
-                        feature_dim = 516
-                else:
-                    feature_dim = num_s * words_s
-            test(args.load[i], args.len[i], num_s, words_s, feature_dim=feature_dim)
-    else:
-        if len(args.save) != len(args.num) or len(args.save) != len(args.len) or len(args.save) != len(args.words):
-            print("Warning: Args lengths don't match. Adjusting to shortest length.")
-            min_len = min(len(args.save), len(args.num), len(args.len), len(args.words))
-            args.save = args.save[:min_len]
-            args.num = args.num[:min_len]
-            args.len = args.len[:min_len]
-            args.words = args.words[:min_len]
-        for i, (num_s, words_s) in enumerate(zip(args.num, args.words)):
-            sys.stdout = Logger(os.path.join(save_dir,
-                str(args.len[i]) + 'bits' + '_' + args.dataset + '_' + datetime.now().strftime('%m%d%H%M') + '.txt'))
-            print("[Configuration] Training on dataset: %s\n  Len_bits: %d\n Batch_size: %d\n learning rate: %.3f\n num_books: %d\n num_words: %d" %
-                  (args.dataset, args.len[i], args.bs, args.lr, num_s, words_s))
-            print("HyperParams:\nmargin: %.3f\t miu: %.4f" % (args.margin, args.miu))
-            if args.dataset != "vggface2":
-                if args.len[i] != 36:
-                    feature_dim = 512
-                else:
-                    feature_dim = 516
-            else:
-                feature_dim = num_s * words_s
-            train(args.save[i], args.len[i], num_s, words_s, feature_dim=feature_dim)
