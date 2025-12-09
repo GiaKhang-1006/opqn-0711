@@ -492,11 +492,15 @@ if __name__ == "__main__":
                 print("[Configuration] Training on dataset: %s\n Len_bits: %d\n Batch_size: %d\n learning rate: %.3f\n num_books: %d\n num_words: %d" %
                       (args.dataset, args.len[i], args.bs, args.lr, num_s, words_s))
                 print("HyperParams:\nmargin: %.3f\t miu: %.4f" % (args.margin, args.miu))
-                if args.dataset != "vggface2":
-                    if args.len[i] != 36:
-                        feature_dim = 512
-                    else:
-                        feature_dim = 516
+                # if args.dataset != "vggface2":
+                #     if args.len[i] != 36:
+                #         feature_dim = 512
+                #     else:
+                #         feature_dim = 516
+                # else:
+                #     feature_dim = num_s * words_s
+                if args.len and args.len[0] == 36:
+                    feature_dim = 516
                 else:
-                    feature_dim = num_s * words_s
+                    feature_dim = 512
                 train(args.save[i], args.len[i], num_s, words_s, feature_dim=feature_dim)
