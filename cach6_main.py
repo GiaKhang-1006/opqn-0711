@@ -458,13 +458,17 @@ if __name__ == "__main__":
             if args.cross_dataset:
                 feature_dim = num_s * words_s
             else:
-                if args.dataset != "vggface2":
-                    if args.len[i] != 36:
-                        feature_dim = 512
-                    else:
-                        feature_dim = 516
+                # if args.dataset != "vggface2":
+                #     if args.len[i] != 36:
+                #         feature_dim = 512
+                #     else:
+                #         feature_dim = 516
+                # else:
+                #     feature_dim = num_s * words_s
+                if args.len and args.len[0] == 36:
+                    feature_dim = 516
                 else:
-                    feature_dim = num_s * words_s
+                    feature_dim = 512
             test(args.load[i], args.len[i], num_s, words_s, feature_dim=feature_dim)
     else:
         if not args.save:
