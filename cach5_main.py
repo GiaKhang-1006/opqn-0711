@@ -309,138 +309,247 @@ def train(save_path, length, num, words, feature_dim):
     print("Best mAP {:.4f} at epoch {}".format(best_mAP, best_epoch))
     print("Model saved as %s" % save_path)
 
-
-def test(load_path, length, num, words, feature_dim=512):
+def test(load_path, length, num, words, feature_dim):
+    # --- 1. Validation ---
     len_bit = int(num * math.log(words, 2))
-    assert length == len_bit, "something went wrong with code length"
+    assert length == len_bit, f"Code length mismatch: Expected {len_bit}, got {length}"
 
-    print(f"=============== Evaluation on model {load_path} ===============")
-    print(f"Train classes: {len(trainset.classes)}   | Test classes: {len(testset.classes)}")
-    print(f"Train images: {len(trainset)}            | Test images: {len(testset)}")
+    print(f"\n=============== EVALUATION: {load_path} ===============")
+    print(f"Configuration: {length}-bit | Num: {num} | Words: {words} | Dim: {feature_dim}")
 
-    # ----------------------------- LOAD BACKBONE ----------------------------- #
+    # --- 2. Setup Data & Network ---
+    # Setup Dataloader
+    train_loader = torch.utils.data.DataLoader(trainset, batch_size=args.bs, shuffle=False, num_workers=4)
+    test_loader = torch.utils.data.DataLoader(testset, batch_size=args.bs, shuffle=False, num_workers=4)
+
+    print(f"Train images: {len(trainset)} | Test images: {len(testset)}")
+
+    # Detect Image Size based on dataset (Fix lỗi running_mean)
+    is_small_image = args.dataset in ["facescrub", "cfw", "youtube"] or args.image_size == 32
+    input_size = 32 if is_small_image else 112
+
+    # Load Backbone
     if args.backbone == 'edgeface':
         net = EdgeFaceBackbone(feature_dim=feature_dim)
     else:
-        if args.dataset == 'facescrub':
+        if is_small_image:
             net = resnet20_pq(num_layers=20, feature_dim=feature_dim, channel_max=512, size=4)
         else:
             net = resnet20_pq(num_layers=20, feature_dim=feature_dim)
 
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
     net = nn.DataParallel(net).to(device)
 
-    # ----------------------------- CHECKPOINT PATH ---------------------------- #
-    checkpoint_dir = (
-        '/kaggle/working/opqn-0210/checkpoint/'
-        if 'kaggle' in os.environ.get('PWD', '')
-        else 'checkpoint'
-    )
-    checkpoint_path = load_path if os.path.isabs(load_path) else os.path.join(checkpoint_dir, load_path)
+    # --- 3. Load Checkpoint ---
+    checkpoint_dir = '/kaggle/working/opqn-0210/checkpoint/' if 'kaggle' in os.environ.get('PWD', '') else './checkpoint/'
+    
+    # Logic tìm file checkpoint thông minh
+    real_path = load_path
+    if not os.path.exists(real_path):
+        real_path = os.path.join(checkpoint_dir, load_path)
+    
+    if not os.path.exists(real_path):
+        print(f"Error: Checkpoint not found at {real_path}")
+        return
 
-    if not os.path.exists(checkpoint_path):
-        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
-
-    checkpoint = torch.load(checkpoint_path)
+    print(f"Loading weights from: {real_path}")
+    checkpoint = torch.load(real_path, map_location=device)
     net.load_state_dict(checkpoint['backbone'])
     mlp_weight = checkpoint.get('mlp', None)
-
+    
     net.eval()
     len_word = feature_dim // num
 
-    # ----------------------------- FEATURE EXTRACTION ----------------------------- #
-    start_total = time.perf_counter()
-
+    # --- 4. Testing Process ---
     with torch.no_grad():
-       # 1. PHASE OFFLINE (Không tính giờ vào metric truy vấn)
-        print("Indexing Training Set (Offline)...")
+        # A. Indexing (Offline Phase)
+        print(">>> [1/4] Indexing Training Set (Offline)...")
         index, train_labels = compute_quant_indexing(
             transform_test, train_loader, net, len_word, mlp_weight, device
         )
-        
-        # -------------------------------------------------------------------
-        # 2. ĐO THỜI GIAN FEATURE EXTRACTION (Của tập Test/Query)
-        # -------------------------------------------------------------------
-        # Warm-up GPU (chạy nháp 1 chút để GPU nóng máy, tránh lần đầu bị chậm)
-        dummy_input = torch.randn(1, 3, 112, 112).to(device)
+
+        # B. Warm-up GPU (Fix lỗi kích thước ảnh ở đây)
+        print(f">>> [2/4] Warming up GPU with size {input_size}x{input_size}...")
+        dummy_input = torch.randn(1, 3, input_size, input_size).to(device)
         _ = net(dummy_input)
-        torch.cuda.synchronize() 
-        
+        torch.cuda.synchronize()
+
+        # C. Feature Extraction (Timed)
+        print(">>> [3/4] Extracting Query Features...")
         start_extract = time.perf_counter()
-        
-        # Trích xuất đặc trưng query
         query_features, test_labels = compute_quant(
             transform_test, test_loader, net, device
         )
-        
-        torch.cuda.synchronize() # Chờ GPU trích xuất xong hết mới dừng giờ
-        extract_time_total = (time.perf_counter() - start_extract)
-        
-        # -------------------------------------------------------------------
-        # 3. ĐO THỜI GIAN SEARCH (TÍNH KHOẢNG CÁCH + SẮP XẾP)
-        # -------------------------------------------------------------------
-        # Chỉ đo 1 lần tìm kiếm duy nhất (ví dụ lấy top lớn nhất cần dùng, ở đây là len(trainset))
-        
         torch.cuda.synchronize()
+        extract_time_total = time.perf_counter() - start_extract
+
+        # D. Search & Retrieval (Timed)
+        print(">>> [4/4] Searching & Calculating mAP...")
         start_search = time.perf_counter()
         
-        # Gọi hàm search 1 lần duy nhất
-        # Lưu ý: Hàm này nên trả về khoảng cách/kết quả thô, 
-        # việc tính mAP hay Accuracy là việc của đánh giá, không phải thời gian search thực tế.
-        # Tuy nhiên nếu hàm PqDistRet_Ortho gộp chung thì ta đành đo chung.
-        # Để công bằng, chỉ đo lần chạy nặng nhất (top=len(trainset)) hoặc top-100
-        
-        mAP, _ = PqDistRet_Ortho(
-            query_features, test_labels,
-            train_labels, index,
-            mlp_weight, len_word, num,
-            device,
-            top=len(trainset) 
+        # Tính mAP với top=ALL (để chuẩn xác nhất)
+        mAP, top1 = PqDistRet_Ortho(
+            query_features, test_labels, train_labels, index,
+            mlp_weight, len_word, num, device, top=len(trainset)
         )
         
-        torch.cuda.synchronize() # Chờ search xong
-        search_time_total = (time.perf_counter() - start_search)
+        torch.cuda.synchronize()
+        search_time_total = time.perf_counter() - start_search
 
-        # -------------------------------------------------------------------
-        # 4. TÍNH TOÁN KẾT QUẢ
-        # -------------------------------------------------------------------
-        num_queries = len(testset)
+        # Tính thêm Top-5, Top-10 (nhanh, không ảnh hưởng nhiều latency)
+        _, top5 = PqDistRet_Ortho(query_features, test_labels, train_labels, index, mlp_weight, len_word, num, device, top=5)
+        _, top10 = PqDistRet_Ortho(query_features, test_labels, train_labels, index, mlp_weight, len_word, num, device, top=10)
+
+    # --- 5. Reporting ---
+    num_queries = len(testset)
+    avg_extract_ms = (extract_time_total * 1000) / num_queries
+    avg_search_ms = (search_time_total * 1000) / num_queries
+    avg_total_ms = avg_extract_ms + avg_search_ms
+
+    print("-" * 30 + " RESULTS " + "-" * 30)
+    print(f"| mAP:    {100 * mAP:.2f}%")
+    print(f"| Top-1:  {100 * top1:.2f}%")
+    print(f"| Top-5:  {100 * top5:.2f}%")
+    print(f"| Top-10: {100 * top10:.2f}%")
+    print("-" * 30 + " LATENCY " + "-" * 30)
+    print(f"| Extraction: {avg_extract_ms:.4f} ms/query")
+    print(f"| Search:     {avg_search_ms:.4f} ms/query")
+    print(f"| ==> TOTAL:  {avg_total_ms:.4f} ms/query")
+    print("=" * 69 + "\n")
+
+
+
+# def test(load_path, length, num, words, feature_dim=512):
+#     len_bit = int(num * math.log(words, 2))
+#     assert length == len_bit, "something went wrong with code length"
+
+#     print(f"=============== Evaluation on model {load_path} ===============")
+#     print(f"Train classes: {len(trainset.classes)}   | Test classes: {len(testset.classes)}")
+#     print(f"Train images: {len(trainset)}            | Test images: {len(testset)}")
+
+#     # ----------------------------- LOAD BACKBONE ----------------------------- #
+#     if args.backbone == 'edgeface':
+#         net = EdgeFaceBackbone(feature_dim=feature_dim)
+#     else:
+#         if args.dataset == 'facescrub':
+#             net = resnet20_pq(num_layers=20, feature_dim=feature_dim, channel_max=512, size=4)
+#         else:
+#             net = resnet20_pq(num_layers=20, feature_dim=feature_dim)
+
+#     net = nn.DataParallel(net).to(device)
+
+#     # ----------------------------- CHECKPOINT PATH ---------------------------- #
+#     checkpoint_dir = (
+#         '/kaggle/working/opqn-0210/checkpoint/'
+#         if 'kaggle' in os.environ.get('PWD', '')
+#         else 'checkpoint'
+#     )
+#     checkpoint_path = load_path if os.path.isabs(load_path) else os.path.join(checkpoint_dir, load_path)
+
+#     if not os.path.exists(checkpoint_path):
+#         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+
+#     checkpoint = torch.load(checkpoint_path)
+#     net.load_state_dict(checkpoint['backbone'])
+#     mlp_weight = checkpoint.get('mlp', None)
+
+#     net.eval()
+#     len_word = feature_dim // num
+
+#     # ----------------------------- FEATURE EXTRACTION ----------------------------- #
+#     start_total = time.perf_counter()
+
+#     with torch.no_grad():
+#        # 1. PHASE OFFLINE (Không tính giờ vào metric truy vấn)
+#         print("Indexing Training Set (Offline)...")
+#         index, train_labels = compute_quant_indexing(
+#             transform_test, train_loader, net, len_word, mlp_weight, device
+#         )
         
-        # Thời gian trung bình trích xuất 1 ảnh
-        avg_extract_ms = (extract_time_total * 1000) / num_queries
+#         # -------------------------------------------------------------------
+#         # 2. ĐO THỜI GIAN FEATURE EXTRACTION (Của tập Test/Query)
+#         # -------------------------------------------------------------------
+#         # Warm-up GPU (chạy nháp 1 chút để GPU nóng máy, tránh lần đầu bị chậm)
+#         dummy_input = torch.randn(1, 3, 112, 112).to(device)
+#         _ = net(dummy_input)
+#         torch.cuda.synchronize() 
         
-        # Thời gian trung bình tìm kiếm cho 1 ảnh
-        avg_search_ms = (search_time_total * 1000) / num_queries
+#         start_extract = time.perf_counter()
         
-        # Tổng thời gian latency cho 1 query
-        avg_time_per_query = avg_extract_ms + avg_search_ms
+#         # Trích xuất đặc trưng query
+#         query_features, test_labels = compute_quant(
+#             transform_test, test_loader, net, device
+#         )
+        
+#         torch.cuda.synchronize() # Chờ GPU trích xuất xong hết mới dừng giờ
+#         extract_time_total = (time.perf_counter() - start_extract)
+        
+#         # -------------------------------------------------------------------
+#         # 3. ĐO THỜI GIAN SEARCH (TÍNH KHOẢNG CÁCH + SẮP XẾP)
+#         # -------------------------------------------------------------------
+#         # Chỉ đo 1 lần tìm kiếm duy nhất (ví dụ lấy top lớn nhất cần dùng, ở đây là len(trainset))
+        
+#         torch.cuda.synchronize()
+#         start_search = time.perf_counter()
+        
+#         # Gọi hàm search 1 lần duy nhất
+#         # Lưu ý: Hàm này nên trả về khoảng cách/kết quả thô, 
+#         # việc tính mAP hay Accuracy là việc của đánh giá, không phải thời gian search thực tế.
+#         # Tuy nhiên nếu hàm PqDistRet_Ortho gộp chung thì ta đành đo chung.
+#         # Để công bằng, chỉ đo lần chạy nặng nhất (top=len(trainset)) hoặc top-100
+        
+#         mAP, _ = PqDistRet_Ortho(
+#             query_features, test_labels,
+#             train_labels, index,
+#             mlp_weight, len_word, num,
+#             device,
+#             top=len(trainset) 
+#         )
+        
+#         torch.cuda.synchronize() # Chờ search xong
+#         search_time_total = (time.perf_counter() - start_search)
 
-        print(f"=============== Latency Report ===============")
-        print(f"Total Queries: {num_queries}")
-        print(f"Feature Extraction Time: {avg_extract_ms:.4f} ms/img")
-        print(f"Search Time (Retrieval): {avg_search_ms:.4f} ms/query")
-        print(f"--> Average Time per Query: {avg_time_per_query:.4f} ms")
+#         # -------------------------------------------------------------------
+#         # 4. TÍNH TOÁN KẾT QUẢ
+#         # -------------------------------------------------------------------
+#         num_queries = len(testset)
+        
+#         # Thời gian trung bình trích xuất 1 ảnh
+#         avg_extract_ms = (extract_time_total * 1000) / num_queries
+        
+#         # Thời gian trung bình tìm kiếm cho 1 ảnh
+#         avg_search_ms = (search_time_total * 1000) / num_queries
+        
+#         # Tổng thời gian latency cho 1 query
+#         avg_time_per_query = avg_extract_ms + avg_search_ms
 
-        # 2) Tính top-k từ 10 → 100
-        topk_dict = {}
-        for k in range(10, 101, 10):
-            _, acc_k = PqDistRet_Ortho(
-                query_features, test_labels,
-                train_labels, index,
-                mlp_weight, len_word, num,
-                device,
-                top=k
-            )
-            topk_dict[k] = acc_k
+#         print(f"=============== Latency Report ===============")
+#         print(f"Total Queries: {num_queries}")
+#         print(f"Feature Extraction Time: {avg_extract_ms:.4f} ms/img")
+#         print(f"Search Time (Retrieval): {avg_search_ms:.4f} ms/query")
+#         print(f"--> Average Time per Query: {avg_time_per_query:.4f} ms")
+
+#         # 2) Tính top-k từ 10 → 100
+#         topk_dict = {}
+#         for k in range(10, 101, 10):
+#             _, acc_k = PqDistRet_Ortho(
+#                 query_features, test_labels,
+#                 train_labels, index,
+#                 mlp_weight, len_word, num,
+#                 device,
+#                 top=k
+#             )
+#             topk_dict[k] = acc_k
 
 
-    total_time_ms = (time.perf_counter() - start_total) * 1000
-    avg_query_time = total_time_ms / len(testset)
+#     total_time_ms = (time.perf_counter() - start_total) * 1000
+#     avg_query_time = total_time_ms / len(testset)
 
-    # ----------------------------- OUTPUT ----------------------------- #
-    print(f"[Evaluate] mAP: {100 * mAP:.2f}%")
+#     # ----------------------------- OUTPUT ----------------------------- #
+#     print(f"[Evaluate] mAP: {100 * mAP:.2f}%")
    
-    for k, acc in topk_dict.items():
-        print(f"[Evaluate @ top-{k}] accuracy: {100 * acc:.2f}%")
+#     for k, acc in topk_dict.items():
+#         print(f"[Evaluate @ top-{k}] accuracy: {100 * acc:.2f}%")
 
 
 
@@ -613,35 +722,75 @@ def test(load_path, length, num, words, feature_dim=512):
 #     print(f"Query completed in {total_query_time:.2f} ms")
 #     print(f"Average query time: {avg_query_time:.4f} ms/query")
 
+# if __name__ == "__main__":
+#     save_dir = 'log'
+#     if args.evaluate:
+#         if not args.load:
+#             print("Error: --load is required for evaluation mode")
+#             sys.exit(1)
+#         if len(args.load) != len(args.num) or len(args.load) != len(args.len) or len(args.load) != len(args.words):
+#             print("Warning: Args lengths don't match. Adjusting to shortest length.")
+#             min_len = min(len(args.load), len(args.num), len(args.len), len(args.words))
+#             args.load = args.load[:min_len]
+#             args.num = args.num[:min_len]
+#             args.len = args.len[:min_len]
+#             args.words = args.words[:min_len]
+#         for i, (num_s, words_s) in enumerate(zip(args.num, args.words)):
+#             if args.cross_dataset:
+#                 feature_dim = num_s * words_s
+#             else:
+#                 # if args.dataset != "vggface2":
+#                 #     if args.len[i] != 36:
+#                 #         feature_dim = 512
+#                 #     else:
+#                 #         feature_dim = 516
+#                 # else:
+#                 #     feature_dim = num_s * words_s
+#                 if args.len and args.len[0] == 36:
+#                     feature_dim = 516
+#                 else:
+#                     feature_dim = 512
+#             test(args.load[i], args.len[i], num_s, words_s, feature_dim=feature_dim)
+
 if __name__ == "__main__":
     save_dir = 'log'
+    
+    # --- EVALUATION MODE ---
     if args.evaluate:
         if not args.load:
             print("Error: --load is required for evaluation mode")
             sys.exit(1)
-        if len(args.load) != len(args.num) or len(args.load) != len(args.len) or len(args.load) != len(args.words):
-            print("Warning: Args lengths don't match. Adjusting to shortest length.")
-            min_len = min(len(args.load), len(args.num), len(args.len), len(args.words))
-            args.load = args.load[:min_len]
-            args.num = args.num[:min_len]
-            args.len = args.len[:min_len]
-            args.words = args.words[:min_len]
+        
+        # Kiểm tra độ dài tham số
+        min_len = min(len(args.load), len(args.num), len(args.words))
+        if len(args.load) != min_len:
+             print("Warning: Args lengths don't match. Adjusting to shortest list.")
+             args.load = args.load[:min_len]
+             args.num = args.num[:min_len]
+             args.len = args.len[:min_len]
+             args.words = args.words[:min_len]
+
+        # Vòng lặp chạy qua từng cấu hình (16, 24, 36, 48 bit)
         for i, (num_s, words_s) in enumerate(zip(args.num, args.words)):
-            if args.cross_dataset:
-                feature_dim = num_s * words_s
-            else:
-                # if args.dataset != "vggface2":
-                #     if args.len[i] != 36:
-                #         feature_dim = 512
-                #     else:
-                #         feature_dim = 516
-                # else:
-                #     feature_dim = num_s * words_s
-                if args.len and args.len[0] == 36:
-                    feature_dim = 516
-                else:
-                    feature_dim = 512
-            test(args.load[i], args.len[i], num_s, words_s, feature_dim=feature_dim)
+            
+            # --- LOGIC TỰ ĐỘNG XÁC ĐỊNH DIMENSION ---
+            # Mặc định là 512
+            current_dim = 512
+            
+            # Trường hợp đặc biệt 36 bit (num=6, words=64 -> 6 * 64 bits)
+            # 512 không chia hết cho 6, nên model phải là 516
+            if num_s == 6 and (512 % 6 != 0):
+                current_dim = 516
+            
+            # Nếu người dùng chạy EdgeFace, giữ nguyên 512 (trừ khi bạn custom)
+            if args.backbone == 'edgeface':
+                current_dim = 512
+
+            # Tính lại số bit để hiển thị cho đúng
+            calc_len = int(num_s * math.log(words_s, 2))
+            
+            # Gọi hàm test
+            test(args.load[i], calc_len, num_s, words_s, feature_dim=current_dim)
     else:
         if not args.save:
             print("Error: --save is required for training mode")
