@@ -522,9 +522,9 @@ if __name__ == "__main__":
             if num_s == 6 and (512 % 6 != 0):
                 current_dim = 516
             
-            # Nếu người dùng chạy EdgeFace, giữ nguyên 512 (trừ khi bạn custom)
-            if args.backbone == 'edgeface':
-                current_dim = 512
+            # # Nếu người dùng chạy EdgeFace, giữ nguyên 512 (trừ khi bạn custom)
+            # if args.backbone == 'edgeface':
+            #     current_dim = 512
 
             # Tính lại số bit để hiển thị cho đúng
             calc_len = int(num_s * math.log(words_s, 2))
