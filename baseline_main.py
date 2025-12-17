@@ -417,8 +417,8 @@ def test(load_path, length, num, words, feature_dim):
         print(">>> [4/4] Searching & Calculating mAP...")
         start_search = time.perf_counter()
         
-        # Tính mAP với top=ALL (để chuẩn xác nhất)
-        mAP, top1 = PqDistRet_Ortho(
+        # 1. Tính mAP (Dùng top=len(trainset)) - Biến thứ 2 ở đây KHÔNG PHẢI Top-1
+        mAP, _ = PqDistRet_Ortho(
             query_features, test_labels, train_labels, index,
             mlp_weight, len_word, num, device, top=len(trainset)
         )
@@ -426,9 +426,27 @@ def test(load_path, length, num, words, feature_dim):
         torch.cuda.synchronize()
         search_time_total = time.perf_counter() - start_search
 
-        # Tính thêm Top-5, Top-10 (nhanh, không ảnh hưởng nhiều latency)
+        # 2. Tính Top-1, Top-5, Top-10 (Chạy riêng để lấy số đúng)
+        _, top1 = PqDistRet_Ortho(query_features, test_labels, train_labels, index, mlp_weight, len_word, num, device, top=1)
         _, top5 = PqDistRet_Ortho(query_features, test_labels, train_labels, index, mlp_weight, len_word, num, device, top=5)
         _, top10 = PqDistRet_Ortho(query_features, test_labels, train_labels, index, mlp_weight, len_word, num, device, top=10)
+
+        # # D. Search & Retrieval (Timed)
+        # print(">>> [4/4] Searching & Calculating mAP...")
+        # start_search = time.perf_counter()
+        
+        # # Tính mAP với top=ALL (để chuẩn xác nhất)
+        # mAP, top1 = PqDistRet_Ortho(
+        #     query_features, test_labels, train_labels, index,
+        #     mlp_weight, len_word, num, device, top=len(trainset)
+        # )
+        
+        # torch.cuda.synchronize()
+        # search_time_total = time.perf_counter() - start_search
+
+        # # Tính thêm Top-5, Top-10 (nhanh, không ảnh hưởng nhiều latency)
+        # _, top5 = PqDistRet_Ortho(query_features, test_labels, train_labels, index, mlp_weight, len_word, num, device, top=5)
+        # _, top10 = PqDistRet_Ortho(query_features, test_labels, train_labels, index, mlp_weight, len_word, num, device, top=10)
 
     # --- 5. Reporting ---
     num_queries = len(testset)
