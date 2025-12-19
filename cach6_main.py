@@ -324,15 +324,15 @@ def test(load_path, length, num, words, feature_dim):
 
     print(f"Train images: {len(trainset)} | Test images: {len(testset)}")
 
-    # Detect Image Size based on dataset (Fix lỗi running_mean)
-    is_small_image = args.dataset in ["facescrub", "cfw", "youtube"] or args.image_size == 32
-    input_size = 32 if is_small_image else 112
+    # # Detect Image Size based on dataset (Fix lỗi running_mean)
+    # is_small_image = args.dataset in ["facescrub", "cfw", "youtube"] or args.image_size == 32
+    # input_size = 32 if is_small_image else 112
 
     # Load Backbone
     if args.backbone == 'edgeface':
         net = EdgeFaceBackbone(feature_dim=feature_dim)
     else:
-        if is_small_image:
+        if args.image_size == 32:
             net = resnet20_pq(num_layers=20, feature_dim=feature_dim, channel_max=512, size=4)
         else:
             net = resnet20_pq(num_layers=20, feature_dim=feature_dim)
