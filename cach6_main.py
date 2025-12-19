@@ -327,7 +327,7 @@ def test(load_path, length, num, words, feature_dim):
     # # Detect Image Size based on dataset (Fix lỗi running_mean)
     # is_small_image = args.dataset in ["facescrub", "cfw", "youtube"] or args.image_size == 32
     # input_size = 32 if is_small_image else 112
-
+    input_size = args.image_size
     # Load Backbone
     if args.backbone == 'edgeface':
         net = EdgeFaceBackbone(feature_dim=feature_dim)
