@@ -519,7 +519,7 @@ if __name__ == "__main__":
             
             # Trường hợp đặc biệt 36 bit (num=6, words=64 -> 6 * 64 bits)
             # 512 không chia hết cho 6, nên model phải là 516
-            if num_s == 6 and (512 % 6 != 0):
+            if num_s == 6:
                 current_dim = 516
             
             # # Nếu người dùng chạy EdgeFace, giữ nguyên 512 (trừ khi bạn custom)
@@ -527,7 +527,8 @@ if __name__ == "__main__":
             #     current_dim = 512
 
             # Tính lại số bit để hiển thị cho đúng
-            calc_len = int(num_s * math.log(words_s, 2))
+            #calc_len = int(num_s * math.log(words_s, 2))
+            calc_len = args.len[i]
             
             # Gọi hàm test
             test(args.load[i], calc_len, num_s, words_s, feature_dim=current_dim)
