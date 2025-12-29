@@ -230,7 +230,7 @@ def train(save_path, length, num, words, feature_dim):
     ]
     optimizer = optim.SGD(optimizer_params, weight_decay=1e-3, momentum=0.9)
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True)
-    EPOCHS = 300 if args.dataset in ["facescrub", "cfw", "youtube"] else 160
+    EPOCHS = 200 if args.dataset in ["facescrub", "cfw", "youtube"] else 160
     since = time.time()
     best_loss = 1e3
 
