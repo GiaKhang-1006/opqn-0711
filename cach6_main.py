@@ -436,6 +436,89 @@ def test(load_path, length, num, words, feature_dim):
     print("=" * 69 + "\n")
 
 
+
+if __name__ == "__main__":
+    save_dir = 'log'
+    
+    # --- EVALUATION MODE ---
+    if args.evaluate:
+        if not args.load:
+            print("Error: --load is required for evaluation mode")
+            sys.exit(1)
+        
+        # Kiểm tra độ dài tham số
+        min_len = min(len(args.load), len(args.num), len(args.words))
+        if len(args.load) != min_len:
+             print("Warning: Args lengths don't match. Adjusting to shortest list.")
+             args.load = args.load[:min_len]
+             args.num = args.num[:min_len]
+             args.len = args.len[:min_len]
+             args.words = args.words[:min_len]
+
+        # Vòng lặp chạy qua từng cấu hình (16, 24, 36, 48 bit)
+        for i, (num_s, words_s) in enumerate(zip(args.num, args.words)):
+            
+            # --- LOGIC TỰ ĐỘNG XÁC ĐỊNH DIMENSION ---
+            # Mặc định là 512
+            current_dim = 512
+            
+            # Trường hợp đặc biệt 36 bit (num=6, words=64 -> 6 * 64 bits)
+            # 512 không chia hết cho 6, nên model phải là 516
+            if num_s == 6 and (512 % 6 != 0):
+                current_dim = 516
+            
+            # # Nếu người dùng chạy EdgeFace, giữ nguyên 512 (trừ khi bạn custom)
+            # if args.backbone == 'edgeface':
+            #     current_dim = 512
+
+            # Tính lại số bit để hiển thị cho đúng
+            calc_len = int(num_s * math.log(words_s, 2))
+            
+            # Gọi hàm test
+            test(args.load[i], calc_len, num_s, words_s, feature_dim=current_dim)
+    else:
+        if not args.save:
+            print("Error: --save is required for training mode")
+            sys.exit(1)
+        if args.pretrain_arcface:
+            if not args.len:
+                args.len = [36] # Máº·c Ä‘á»‹nh 36 bits Ä‘á»ƒ trigger feature_dim=516
+            sys.stdout = Logger(os.path.join(save_dir,
+                'arcface_' + args.dataset + '_' + datetime.now().strftime('%m%d%H%M') + '.txt'))
+            print("[Configuration] Pre-training on dataset: %s\n Batch_size: %d\n learning rate backbone: %.6f\n learning rate metric: %.6f\n s: %.1f\n m: %.1f\n max_norm: %.1f\n epochs: %d" %
+                  (args.dataset, args.bs, args.lr_backbone, args.lr_backbone * 10, args.s_arcface, args.m_arcface, args.max_norm, args.epochs_arcface))
+            train(args.save[0], None, None, None, feature_dim=512)
+        else:
+            if len(args.save) != len(args.num) or len(args.save) != len(args.len) or len(args.save) != len(args.words):
+                print("Warning: Args lengths don't match. Adjusting to shortest length.")
+                min_len = min(len(args.save), len(args.num), len(args.len), len(args.words))
+                args.save = args.save[:min_len]
+                args.num = args.num[:min_len]
+                args.len = args.len[:min_len]
+                args.words = args.words[:min_len]
+            for i, (num_s, words_s) in enumerate(zip(args.num, args.words)):
+                sys.stdout = Logger(os.path.join(save_dir,
+                    str(args.len[i]) + 'bits' + '_' + args.dataset + '_' + datetime.now().strftime('%m%d%H%M') + '.txt'))
+                print("[Configuration] Training on dataset: %s\n Len_bits: %d\n Batch_size: %d\n learning rate: %.3f\n num_books: %d\n num_words: %d" %
+                      (args.dataset, args.len[i], args.bs, args.lr, num_s, words_s))
+                print("HyperParams:\nmargin: %.3f\t miu: %.4f" % (args.margin, args.miu))
+                # if args.dataset != "vggface2":
+                #     if args.len[i] != 36:
+                #         feature_dim = 512
+                #     else:
+                #         feature_dim = 516
+                # else:
+                #     feature_dim = num_s * words_s
+                if args.len and args.len[0] == 36:
+                    feature_dim = 516
+                else:
+                    feature_dim = 512
+                train(args.save[i], args.len[i], num_s, words_s, feature_dim=feature_dim)
+
+
+
+
+
 # def test(load_path, length, num, words, feature_dim=512):
 #     len_bit = int(num * math.log(words, 2))
 #     assert length == len_bit, "something went wrong with code length"
@@ -598,81 +681,3 @@ def test(load_path, length, num, words, feature_dim):
 #                 else:
 #                     feature_dim = 512
 #             test(args.load[i], args.len[i], num_s, words_s, feature_dim=feature_dim)
-
-if __name__ == "__main__":
-    save_dir = 'log'
-    
-    # --- EVALUATION MODE ---
-    if args.evaluate:
-        if not args.load:
-            print("Error: --load is required for evaluation mode")
-            sys.exit(1)
-        
-        # Kiểm tra độ dài tham số
-        min_len = min(len(args.load), len(args.num), len(args.words))
-        if len(args.load) != min_len:
-             print("Warning: Args lengths don't match. Adjusting to shortest list.")
-             args.load = args.load[:min_len]
-             args.num = args.num[:min_len]
-             args.len = args.len[:min_len]
-             args.words = args.words[:min_len]
-
-        # Vòng lặp chạy qua từng cấu hình (16, 24, 36, 48 bit)
-        for i, (num_s, words_s) in enumerate(zip(args.num, args.words)):
-            
-            # --- LOGIC TỰ ĐỘNG XÁC ĐỊNH DIMENSION ---
-            # Mặc định là 512
-            current_dim = 512
-            
-            # Trường hợp đặc biệt 36 bit (num=6, words=64 -> 6 * 64 bits)
-            # 512 không chia hết cho 6, nên model phải là 516
-            if num_s == 6 and (512 % 6 != 0):
-                current_dim = 516
-            
-            # # Nếu người dùng chạy EdgeFace, giữ nguyên 512 (trừ khi bạn custom)
-            # if args.backbone == 'edgeface':
-            #     current_dim = 512
-
-            # Tính lại số bit để hiển thị cho đúng
-            calc_len = int(num_s * math.log(words_s, 2))
-            
-            # Gọi hàm test
-            test(args.load[i], calc_len, num_s, words_s, feature_dim=current_dim)
-    else:
-        if not args.save:
-            print("Error: --save is required for training mode")
-            sys.exit(1)
-        if args.pretrain_arcface:
-            if not args.len:
-                args.len = [36] # Máº·c Ä‘á»‹nh 36 bits Ä‘á»ƒ trigger feature_dim=516
-            sys.stdout = Logger(os.path.join(save_dir,
-                'arcface_' + args.dataset + '_' + datetime.now().strftime('%m%d%H%M') + '.txt'))
-            print("[Configuration] Pre-training on dataset: %s\n Batch_size: %d\n learning rate backbone: %.6f\n learning rate metric: %.6f\n s: %.1f\n m: %.1f\n max_norm: %.1f\n epochs: %d" %
-                  (args.dataset, args.bs, args.lr_backbone, args.lr_backbone * 10, args.s_arcface, args.m_arcface, args.max_norm, args.epochs_arcface))
-            train(args.save[0], None, None, None, feature_dim=512)
-        else:
-            if len(args.save) != len(args.num) or len(args.save) != len(args.len) or len(args.save) != len(args.words):
-                print("Warning: Args lengths don't match. Adjusting to shortest length.")
-                min_len = min(len(args.save), len(args.num), len(args.len), len(args.words))
-                args.save = args.save[:min_len]
-                args.num = args.num[:min_len]
-                args.len = args.len[:min_len]
-                args.words = args.words[:min_len]
-            for i, (num_s, words_s) in enumerate(zip(args.num, args.words)):
-                sys.stdout = Logger(os.path.join(save_dir,
-                    str(args.len[i]) + 'bits' + '_' + args.dataset + '_' + datetime.now().strftime('%m%d%H%M') + '.txt'))
-                print("[Configuration] Training on dataset: %s\n Len_bits: %d\n Batch_size: %d\n learning rate: %.3f\n num_books: %d\n num_words: %d" %
-                      (args.dataset, args.len[i], args.bs, args.lr, num_s, words_s))
-                print("HyperParams:\nmargin: %.3f\t miu: %.4f" % (args.margin, args.miu))
-                # if args.dataset != "vggface2":
-                #     if args.len[i] != 36:
-                #         feature_dim = 512
-                #     else:
-                #         feature_dim = 516
-                # else:
-                #     feature_dim = num_s * words_s
-                if args.len and args.len[0] == 36:
-                    feature_dim = 516
-                else:
-                    feature_dim = 512
-                train(args.save[i], args.len[i], num_s, words_s, feature_dim=feature_dim)
