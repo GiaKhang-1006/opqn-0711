@@ -117,19 +117,36 @@ def diagnose_16bit_model(model, dataloader, device):
     # --- VẼ BIỂU ĐỒ ---
     plt.figure(figsize=(14, 6))
     
+    # # Histogram
+    # plt.subplot(1, 2, 1)
+    # sns.histplot(vals.flatten(), bins=50, kde=True, color='blue')
+    # plt.title("Phân bố giá trị Output (Histogram)")
+    # plt.xlabel("Giá trị Feature")
+    
+    # # Bit Variance
+    # bit_std = np.std(vals, axis=0) 
+    # plt.subplot(1, 2, 2)
+    # plt.bar(range(len(bit_std)), bit_std, color='red')
+    # plt.title("Độ biến thiên (Std Dev) của từng Bit")
+    # plt.xlabel("Bit Index (0-15)")
+    # plt.axhline(y=0.01, color='black', linestyle='--', label='Ngưỡng chết')
+    # plt.legend()
+    
+    # plt.tight_layout()
+    # plt.show()
     # Histogram
     plt.subplot(1, 2, 1)
     sns.histplot(vals.flatten(), bins=50, kde=True, color='blue')
-    plt.title("Phân bố giá trị Output (Histogram)")
-    plt.xlabel("Giá trị Feature")
-    
+    plt.title("Output Value Distribution (Histogram)")
+    plt.xlabel("Feature Value")
+
     # Bit Variance
     bit_std = np.std(vals, axis=0) 
     plt.subplot(1, 2, 2)
     plt.bar(range(len(bit_std)), bit_std, color='red')
-    plt.title("Độ biến thiên (Std Dev) của từng Bit")
+    plt.title("Variance (Std Dev) of Each Bit")
     plt.xlabel("Bit Index (0-15)")
-    plt.axhline(y=0.01, color='black', linestyle='--', label='Ngưỡng chết')
+    plt.axhline(y=0.01, color='black', linestyle='--', label='Dead Threshold')
     plt.legend()
     
     plt.tight_layout()
